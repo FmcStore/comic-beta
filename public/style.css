@@ -1,5 +1,6 @@
-/* style.css */
+/* --- style.css --- */
 @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&display=swap'); /* Font untuk Angka Ranking */
 
 body { 
     font-family: 'Poppins', sans-serif; 
@@ -9,137 +10,115 @@ body {
     -webkit-tap-highlight-color: transparent;
 }
 
-/* --- Utilities --- */
-.amber-gradient { 
-    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); 
+/* --- Utilities & Glass --- */
+.amber-gradient { background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); }
+.glass { background: rgba(18, 18, 24, 0.90); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border-bottom: 1px solid rgba(255,255,255,0.05); }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #0b0b0f; }
+::-webkit-scrollbar-thumb { background: #333; border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: #f59e0b; }
+.hide-scroll::-webkit-scrollbar { display: none; }
+
+/* --- Hero Slider --- */
+.hero-wrapper {
+    position: relative;
+    width: 100%;
+    height: 55vh; /* Tinggi Hero di Desktop */
+    min-height: 400px;
+    overflow: hidden;
+    mask-image: linear-gradient(to bottom, black 80%, transparent 100%);
+    -webkit-mask-image: linear-gradient(to bottom, black 80%, transparent 100%);
+}
+@media (max-width: 768px) {
+    .hero-wrapper { height: 60vh; min-height: 350px; }
 }
 
-.glass { 
-    background: rgba(18, 18, 24, 0.95); 
-    backdrop-filter: blur(16px); 
-    -webkit-backdrop-filter: blur(16px);
-    border: 1px solid rgba(255,255,255,0.08); 
+.hero-slide {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    transition: opacity 0.8s ease-in-out, transform 8s ease; /* Zoom effect */
+    transform: scale(1);
+    z-index: 1;
+}
+.hero-slide.active {
+    opacity: 1;
+    transform: scale(1.05); /* Sedikit zoom saat aktif */
+    z-index: 2;
 }
 
-/* Custom Scrollbar Global */
-::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
-}
-::-webkit-scrollbar-track {
-    background: #0b0b0f; 
-}
-::-webkit-scrollbar-thumb {
-    background: #333; 
-    border-radius: 10px;
-}
-::-webkit-scrollbar-thumb:hover {
-    background: #f59e0b; 
+.hero-content {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    padding: 2rem;
+    background: linear-gradient(to top, #0b0b0f 10%, rgba(11,11,15,0.8) 50%, transparent 100%);
+    z-index: 10;
+    display: flex;
+    flex-col: column;
+    justify-content: flex-end;
 }
 
-.hide-scroll::-webkit-scrollbar { 
-    display: none; 
+/* --- Ranking Number --- */
+.rank-number {
+    font-family: 'Oswald', sans-serif;
+    font-size: 5rem;
+    line-height: 1;
+    font-weight: 700;
+    position: absolute;
+    bottom: -15px;
+    left: -5px;
+    color: #0b0b0f;
+    -webkit-text-stroke: 2px #4b5563; /* Outline abu-abu */
+    z-index: 10;
+    opacity: 0.8;
+    pointer-events: none;
+    transition: all 0.3s ease;
+}
+.card-hover:hover .rank-number {
+    -webkit-text-stroke: 2px #f59e0b; /* Outline amber saat hover */
+    color: rgba(245, 158, 11, 0.1);
+    transform: scale(1.1) translateY(-5px);
 }
 
-/* --- Components --- */
-.card-hover { 
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); 
-    border: 1px solid rgba(255, 255, 255, 0.05);
-}
-.card-hover:hover { 
-    transform: translateY(-6px); 
-    border-color: rgba(245, 158, 11, 0.5) !important; 
-    box-shadow: 0 10px 30px -10px rgba(245, 158, 11, 0.2); 
-}
+/* --- Cards & Badges --- */
+.card-hover { transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+.card-hover:hover { transform: translateY(-6px); }
 
-#progress-bar { 
-    transition: width 0.2s ease; 
-    height: 3px; 
-    background: #f59e0b; 
-    position: fixed; 
-    top: 0; 
-    left: 0; 
-    z-index: 100; 
-    box-shadow: 0 0 10px #f59e0b;
-}
-
-/* Badges */
 .type-badge {
     position: absolute;
-    top: 10px;
-    left: 10px;
-    padding: 3px 8px;
-    border-radius: 6px;
+    top: 8px; right: 8px;
+    padding: 2px 8px;
+    border-radius: 4px;
     font-size: 9px;
     font-weight: 800;
     text-transform: uppercase;
-    z-index: 20;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.6);
-    letter-spacing: 0.5px;
     color: #fff;
     backdrop-filter: blur(4px);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.5);
+    z-index: 20;
 }
-.type-manga { background: rgba(37, 99, 235, 0.9); } 
-.type-manhwa { background: rgba(5, 150, 105, 0.9); } 
-.type-manhua { background: rgba(220, 38, 38, 0.9); } 
-.type-default { background: rgba(75, 85, 99, 0.9); } 
+.type-manga { background: rgba(37, 99, 235, 0.9); }
+.type-manhwa { background: rgba(5, 150, 105, 0.9); }
+.type-manhua { background: rgba(220, 38, 38, 0.9); }
+.type-default { background: rgba(75, 85, 99, 0.9); }
 
-/* Reader UI Transitions */
-.reader-ui { 
-    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease; 
-}
-.ui-hidden-top { transform: translateY(-100%); opacity: 0; }
-.ui-hidden-bottom { transform: translateY(100%); opacity: 0; }
-
-/* --- Skeleton Loading Animation --- */
+/* Skeleton & Loading */
 @keyframes shimmer {
     0% { background-position: -1000px 0; }
     100% { background-position: 1000px 0; }
 }
-
 .skeleton {
     animation: shimmer 2s infinite linear;
     background: linear-gradient(to right, #1f1f23 4%, #303036 25%, #1f1f23 36%);
     background-size: 1000px 100%;
 }
+.comic-page { display: block; width: 100%; height: auto; }
 
-/* --- Reader Specifics --- */
-.comic-page {
-    display: block;
-    width: 100%;
-    height: auto;
-    margin: 0;
-    padding: 0;
-    vertical-align: top; /* Mencegah gap putih di bawah gambar */
-}
-
-/* --- Detail Page Specifics --- */
-.backdrop-banner {
-    mask-image: linear-gradient(to bottom, black 0%, transparent 100%);
-    -webkit-mask-image: linear-gradient(to bottom, black 0%, transparent 100%);
-}
-
-.chapter-list-scroll::-webkit-scrollbar {
-    width: 6px;
-}
-.chapter-list-scroll::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.1);
-    border-radius: 10px;
-}
-.chapter-list-scroll::-webkit-scrollbar-thumb:hover {
-    background: rgba(245, 158, 11, 0.5);
-}
-
-/* Form Helper */
-input:-webkit-autofill,
-input:-webkit-autofill:hover, 
-input:-webkit-autofill:focus {
-    -webkit-text-fill-color: white;
-    -webkit-box-shadow: 0 0 0px 1000px #1a1a1a inset;
-    transition: background-color 5000s ease-in-out 0s;
-}
-
-/* Safe Area for iPhone X+ */
-.pb-safe {
-    padding-bottom: env(safe-area-inset-bottom);
-  }
+/* Nav & Layout */
+.pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+#reader-top.ui-hidden-top { transform: translateY(-100%); }
+#reader-bottom.ui-hidden-bottom { transform: translateY(100%); }
