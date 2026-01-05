@@ -1,384 +1,661 @@
-/**
- * FmcComic Pro - Core Application (Fixed Version)
- */
+/* script.js - Updated 2026 for High Performance */
 
-const CONFIG = {
-    API_PROXY: "https://api.nekolabs.web.id/px?url=", 
-    API_BASE: "https://www.sankavollerei.com/comic/komikcast",
-    BACKEND: window.location.origin
-};
+const API_PROXY = "https://api.nekolabs.web.id/px?url=";
+const API_BASE = "https://www.sankavollerei.com/comic/komikcast";
+const BACKEND_URL = window.location.origin;
 
-const app = {
-    state: {
-        history: JSON.parse(localStorage.getItem('fmc_history') || '[]'),
-        bookmarks: JSON.parse(localStorage.getItem('fmc_bookmarks') || '[]'),
-        darkMode: localStorage.getItem('fmc_dark') !== 'false'
-    },
+const contentArea = document.getElementById('content-area');
+const filterPanel = document.getElementById('filter-panel');
+const mainNav = document.getElementById('main-nav');
+const mobileNav = document.getElementById('mobile-nav');
 
-    utils: {
-        // Mengambil UUID dari Slug (Wajib untuk URL)
-        getUuid: async (slug, type) => {
-            try {
-                // Cek local storage dulu biar cepat
-                const cacheKey = `uuid_${slug}`;
-                const cached = localStorage.getItem(cacheKey);
-                if (cached) return cached;
+let currentChapterList = [];
 
-                const res = await fetch(`${CONFIG.BACKEND}/api/get-id`, {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ slug, type })
-                });
-                if(!res.ok) throw new Error("Backend Error");
-                const json = await res.json();
-                
-                // Simpan ke cache
-                if(json.uuid) localStorage.setItem(cacheKey, json.uuid);
-                
-                return json.uuid || slug;
-            } catch (e) { return slug; }
-        },
-        // Mengambil Slug dari UUID (Untuk request ke API Komik)
-        getSlug: async (uuid) => {
-            if(uuid.length !== 36) return uuid; // Kalau bukan UUID, return as is
-            try {
-                const res = await fetch(`${CONFIG.BACKEND}/api/get-slug/${uuid}`);
-                if(!res.ok) return uuid;
-                return (await res.json()).slug;
-            } catch { return uuid; }
-        },
-        fetch: async (url) => {
-            app.ui.loading(true);
-            try {
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout
-                
-                const res = await fetch(CONFIG.API_PROXY + encodeURIComponent(url), { signal: controller.signal });
-                clearTimeout(timeoutId);
+// --- Helpers ---
+async function getUuidFromSlug(slug, type) {
+    try {
+        const res = await fetch(`${BACKEND_URL}/api/get-id`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ slug, type })
+        });
+        const data = await res.json();
+        return data.uuid;
+    } catch (e) { return slug; }
+}
 
-                const data = await res.json();
-                app.ui.loading(false);
-                return data.success ? (data.result?.content || data.result || data) : null;
-            } catch (e) { 
-                console.error(e);
-                app.ui.loading(false); 
-                return null; 
-            }
-        },
-        getTypeClass: (t) => {
-            const type = (t || '').toLowerCase();
-            if(type.includes('manga')) return 'badge-manga';
-            if(type.includes('manhwa')) return 'badge-manhwa';
-            if(type.includes('manhua')) return 'badge-manhua';
-            return 'bg-gray-600';
+async function getSlugFromUuid(uuid) {
+    try {
+        const res = await fetch(`${BACKEND_URL}/api/get-slug/${uuid}`);
+        if (!res.ok) return null;
+        return await res.json();
+    } catch (e) { return null; }
+}
+
+function updateURL(path) {
+    if (window.location.pathname !== path) {
+        history.pushState(null, null, path);
+    }
+}
+
+function getTypeClass(type) {
+    if (!type) return 'type-default';
+    const t = type.toLowerCase();
+    if (t.includes('manga')) return 'type-manga';
+    if (t.includes('manhwa')) return 'type-manhwa';
+    if (t.includes('manhua')) return 'type-manhua';
+    return 'type-default';
+}
+
+function redirectTo404() {
+    // window.location.href = '/404.html'; // Uncomment if you have 404 page
+    contentArea.innerHTML = `<div class="text-center py-40 text-red-500">Error 404: Halaman tidak ditemukan.</div>`;
+}
+
+async function fetchAPI(url) {
+    try {
+        const response = await fetch(API_PROXY + encodeURIComponent(url));
+        const data = await response.json();
+        if (data.success) {
+            return data.result?.content || data.result || data;
         }
-    },
+        return null;
+    } catch (e) { return null; }
+}
 
-    ui: {
-        root: document.getElementById('app-root'),
-        loading: (show) => {
-            const bar = document.getElementById('loading-bar');
-            if(bar) {
-                bar.style.width = show ? '70%' : '100%';
-                setTimeout(() => { if(!show) bar.style.width = '0%'; }, 300);
-            }
-        },
-        toast: (msg) => {
-            const t = document.getElementById('toast');
-            if(t) {
-                document.getElementById('toast-msg').innerText = msg;
-                t.classList.remove('translate-y-20', 'opacity-0');
-                setTimeout(() => t.classList.add('translate-y-20', 'opacity-0'), 3000);
-            }
-        },
-        toggleSearch: () => {
-            const el = document.getElementById('search-overlay');
-            el.classList.toggle('hidden');
-            if(!el.classList.contains('hidden')) {
-                setTimeout(() => el.classList.remove('opacity-0'), 10);
-                document.getElementById('search-input')?.focus();
-            } else {
-                el.classList.add('opacity-0');
-            }
-        },
-        toggleSettings: () => {
-            // Simple Settings Modal
-            const confirmReset = confirm("Menu Pengaturan:\n\nOK = Reset Riwayat & Cache\nCancel = Tutup");
-            if(confirmReset) {
-                localStorage.clear();
-                window.location.reload();
-            }
-        },
-        renderSkeleton: (type) => {
-            if(type === 'grid') {
-                return `<div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4 mt-8 animate-pulse">
-                    ${Array(8).fill(0).map(() => `<div class="aspect-[3/4] bg-white/5 rounded-xl"></div>`).join('')}
-                </div>`;
-            }
-            return `<div class="w-full h-64 bg-white/5 rounded-xl animate-pulse"></div>`;
-        },
-        scrollToTop: () => window.scrollTo({ top: 0, behavior: 'smooth' }),
-        showError: (msg, retry) => {
-            app.ui.root.innerHTML = `
-                <div class="flex flex-col items-center justify-center min-h-[50vh] text-center p-4">
-                    <i class="fa fa-bug text-4xl text-amber-500 mb-4"></i>
-                    <p class="text-gray-400 mb-6">${msg}</p>
-                    <button onclick="${retry}" class="bg-white/10 px-6 py-2 rounded-full hover:bg-amber-500 hover:text-black transition">Coba Lagi</button>
-                </div>`;
-        }
-    },
+function toggleFilter() {
+    filterPanel.classList.toggle('hidden');
+    const genreSelect = document.getElementById('filter-genre');
+    if (genreSelect.options.length <= 1) loadGenres();
+}
 
-    components: {
-        comicCard: (item) => {
-            if(!item) return '';
-            const title = item.title || 'Unknown Title';
-            const image = item.image || 'https://via.placeholder.com/200x300';
-            const type = item.type || 'Comic';
-            // Fix: Ambil chapter dari berbagai kemungkinan key API
-            const ch = item.chapter || item.latestChapter || (item.chapters ? item.chapters[0]?.title : 'Ch.?'); 
-            const slug = item.slug || '#';
-            const uuid = item.uuid || slug; // Ini akan dihandle router nanti
+function resetNavs() {
+    mainNav.classList.remove('-translate-y-full');
+    mobileNav.classList.remove('translate-y-full');
+    filterPanel.classList.add('hidden');
+}
 
-            return `
-            <div class="relative group cursor-pointer" onclick="app.router.navigate(null, '${slug}', false)">
-                <div class="overflow-hidden rounded-xl aspect-[3/4] relative card-gloss bg-[#1f1f23]">
-                    <span class="absolute top-2 left-2 text-[10px] font-bold px-2 py-0.5 rounded text-white z-10 ${app.utils.getTypeClass(type)} shadow-md">${type}</span>
-                    <img src="${image}" loading="lazy" class="w-full h-full object-cover transition duration-500 group-hover:scale-110 group-hover:opacity-80">
-                    <div class="absolute bottom-0 w-full bg-gradient-to-t from-black via-black/90 to-transparent p-3 pt-10">
-                        <h3 class="text-xs font-bold text-white line-clamp-1 group-hover:text-amber-500 transition">${title}</h3>
-                        <p class="text-[10px] text-amber-500 mt-1 font-medium">${ch}</p>
+function toggleFullScreen() {
+    if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch((err) => console.log(err.message));
+    } else {
+        if (document.exitFullscreen) document.exitFullscreen();
+    }
+}
+
+function setLoading() {
+    contentArea.innerHTML = `<div class="flex justify-center py-40"><div class="animate-spin rounded-full h-12 w-12 border-t-2 border-amber-500"></div></div>`;
+}
+
+// --- Data Functions ---
+
+async function loadGenres() {
+    const data = await fetchAPI(`${API_BASE}/genres`);
+    if(data && data.data) {
+        const select = document.getElementById('filter-genre');
+        const sorted = data.data.sort((a, b) => a.title.localeCompare(b.title));
+        select.innerHTML = '<option value="">Pilih Genre</option>';
+        sorted.forEach(g => {
+            const opt = document.createElement('option');
+            opt.value = g.slug; opt.text = g.title; select.appendChild(opt);
+        });
+    }
+}
+
+async function showHome(push = true) {
+    if (push) updateURL('/'); 
+    resetNavs();
+    setLoading();
+    
+    const data = await fetchAPI(`${API_BASE}/home`);
+    if(!data || !data.data) { redirectTo404(); return; }
+
+    contentArea.innerHTML = `
+        <section class="mb-12">
+            <div class="flex items-center justify-between mb-6">
+                <h2 class="text-xl font-bold flex items-center gap-2"><i class="fa fa-fire text-amber-500"></i> Populer Hari Ini</h2>
+            </div>
+            <div class="flex overflow-x-auto gap-4 hide-scroll pb-4 -mx-4 px-4 md:mx-0 md:px-0">
+                ${data.data.hotUpdates.map(item => `
+                    <div class="min-w-[150px] md:min-w-[200px] cursor-pointer card-hover relative rounded-2xl overflow-hidden group" onclick="showDetail('${item.slug}')">
+                        <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-transparent to-transparent z-10"></div>
+                        <span class="type-badge ${getTypeClass(item.type)}">${item.type || 'Hot'}</span>
+                        <img src="${item.image}" class="h-64 md:h-80 w-full object-cover transform group-hover:scale-110 transition duration-500">
+                        <div class="absolute bottom-0 left-0 p-3 z-20 w-full">
+                            <h3 class="text-sm font-bold truncate text-white drop-shadow-md">${item.title}</h3>
+                            <p class="text-amber-400 text-xs font-semibold mt-1">${item.chapter || item.latestChapter}</p>
+                        </div>
                     </div>
-                </div>
-            </div>`;
-        }
-    },
+                `).join('')}
+            </div>
+        </section>
 
-    pages: {
-        home: async () => {
-            app.ui.root.innerHTML = app.ui.renderSkeleton('grid');
-            const data = await app.utils.fetch(`${CONFIG.API_BASE}/home`);
-            
-            if(!data || !data.data) return app.ui.showError("Gagal memuat data Home", "app.pages.home()");
-
-            const hot = data.data.hotUpdates || [];
-            const latest = data.data.latestReleases || [];
-
-            let html = '';
-
-            // Fix Hot Slider
-            if(hot.length > 0) {
-                html += `
-                <section class="mb-8 fade-in">
-                    <div class="flex overflow-x-auto snap-x-mandatory hide-scroll gap-4 pb-4">
-                        ${hot.map(item => `
-                            <div class="snap-center min-w-[85vw] md:min-w-[400px] h-48 md:h-64 rounded-2xl relative overflow-hidden cursor-pointer shadow-lg border border-white/5" 
-                                onclick="app.router.navigate(null, '${item.slug}', false)">
-                                <img src="${item.image}" class="absolute inset-0 w-full h-full object-cover">
-                                <div class="absolute inset-0 bg-gradient-to-r from-black via-black/50 to-transparent flex flex-col justify-center pl-6 pr-20">
-                                    <span class="bg-amber-500 text-black text-[10px] font-bold px-2 py-1 rounded w-fit mb-2">${item.type}</span>
-                                    <h2 class="text-xl md:text-2xl font-black text-white leading-tight line-clamp-2 text-shadow">${item.title}</h2>
-                                    <p class="text-gray-300 text-xs mt-2 font-mono">${item.latestChapter || item.chapter}</p>
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-10">
+            <div class="lg:col-span-2">
+                <h2 class="text-xl font-bold mb-6 border-l-4 border-amber-500 pl-4">Rilis Terbaru</h2>
+                <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 gap-4">
+                    ${data.data.latestReleases.slice(0, 15).map(item => `
+                        <div class="bg-zinc-900/40 border border-white/5 rounded-xl overflow-hidden cursor-pointer hover:border-amber-500/50 transition group" onclick="showDetail('${item.slug}')">
+                            <div class="relative h-48 overflow-hidden">
+                                <span class="type-badge ${getTypeClass(item.type)} bottom-2 left-2 top-auto">${item.type || 'UP'}</span>
+                                <img src="${item.image}" class="w-full h-full object-cover group-hover:scale-110 transition duration-500">
+                            </div>
+                            <div class="p-3">
+                                <h3 class="text-xs font-bold line-clamp-2 h-8 leading-relaxed">${item.title}</h3>
+                                <div class="flex justify-between items-center mt-3">
+                                    <span class="text-[10px] bg-white/5 px-2 py-1 rounded text-gray-400">${item.chapters[0]?.title || 'Ch.?'}</span>
+                                    <span class="text-[10px] text-gray-500">${item.chapters[0]?.time || ''}</span>
                                 </div>
                             </div>
-                        `).join('')}
-                    </div>
-                </section>`;
-            }
-
-            html += `
-            <section class="fade-in">
-                <h2 class="text-xl font-bold mb-6 border-l-4 border-amber-500 pl-4">Update Terbaru</h2>
-                <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
-                    ${latest.map(item => app.components.comicCard(item)).join('')}
+                        </div>
+                    `).join('')}
                 </div>
-            </section>`;
-
-            app.ui.root.innerHTML = html;
-        },
-
-        detail: async (idOrSlug) => {
-            app.ui.root.innerHTML = app.ui.renderSkeleton('grid');
-            app.ui.scrollToTop();
-            
-            // Konversi UUID ke Slug untuk Fetch API
-            let fetchSlug = idOrSlug;
-            if(idOrSlug.length === 36) {
-                const map = await app.utils.getSlug(idOrSlug);
-                if(map) fetchSlug = map;
-            }
-
-            const data = await app.utils.fetch(`${CONFIG.API_BASE}/detail/${fetchSlug}`);
-            if(!data || !data.data) return app.ui.showError("Komik tidak ditemukan", "window.history.back()");
-
-            const c = data.data;
-            const isBookmarked = app.state.bookmarks.some(b => b.slug === fetchSlug);
-            
-            app.ui.root.innerHTML = `
-            <div class="fade-in max-w-5xl mx-auto pb-20">
-                <div class="relative w-full h-[250px] md:h-[350px] rounded-3xl overflow-hidden mb-[-80px] border border-white/5">
-                    <img src="${c.image}" class="w-full h-full object-cover blur-sm opacity-30">
-                    <div class="absolute inset-0 bg-gradient-to-t from-[#0b0b0f] to-transparent"></div>
-                </div>
-
-                <div class="relative px-4 flex flex-col md:flex-row gap-8">
-                    <div class="flex-shrink-0 mx-auto md:mx-0">
-                        <img src="${c.image}" class="w-40 md:w-60 rounded-xl shadow-2xl border-2 border-white/10 z-10 relative">
-                    </div>
-                    <div class="flex-1 pt-4 md:pt-16 text-center md:text-left z-10">
-                        <h1 class="text-2xl md:text-4xl font-black mb-2 leading-tight">${c.title}</h1>
-                        <div class="flex flex-wrap justify-center md:justify-start gap-2 text-[10px] font-bold uppercase tracking-wide text-gray-400 mb-4">
-                            <span>${c.status}</span> • <span>${c.type}</span> • <span class="text-amber-500">⭐ ${c.rating}</span>
-                        </div>
-                        
-                        <div class="flex justify-center md:justify-start gap-3 mb-6">
-                            <button onclick="app.router.navigate(null, '${c.chapters[c.chapters.length-1].slug}', true)" 
-                                class="bg-amber-500 text-black px-8 py-3 rounded-xl font-bold hover:scale-105 transition shadow-lg shadow-amber-500/20">
-                                Mulai Baca
-                            </button>
-                            <button onclick="app.handlers.toggleBookmark('${fetchSlug}', '${c.title.replace(/'/g,"")}', '${c.image}')" 
-                                class="glass px-4 py-3 rounded-xl hover:bg-white/10 transition border border-white/10">
-                                <i class="fa ${isBookmarked ? 'fa-bookmark text-amber-500' : 'fa-bookmark-o'}"></i>
-                            </button>
-                        </div>
-                        
-                        <div class="glass p-4 rounded-xl text-sm text-gray-300 leading-relaxed text-justify mb-6 border border-white/5 max-h-40 overflow-y-auto">
-                            ${c.synopsis}
-                        </div>
-
-                        <div class="mt-8 glass rounded-2xl p-4 border border-white/5 text-left">
-                            <h3 class="font-bold mb-4">Daftar Chapter</h3>
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-[500px] overflow-y-auto pr-2 custom-scroll">
-                                ${c.chapters.map(ch => `
-                                    <div onclick="app.router.navigate(null, '${ch.slug}', true)" 
-                                        class="p-3 rounded-lg flex justify-between items-center cursor-pointer hover:bg-white/10 bg-white/5 border border-white/5 transition">
-                                        <span class="text-sm font-medium text-gray-200 truncate pr-2">${ch.title}</span>
-                                        <span class="text-[10px] text-gray-500 whitespace-nowrap">${ch.date || ''}</span>
-                                    </div>`).join('')}
+            </div>
+            <!-- Sidebar Project -->
+            <div>
+                <h2 class="text-xl font-bold mb-6 border-l-4 border-amber-500 pl-4">Proyek Kami</h2>
+                <div class="space-y-4">
+                    ${data.data.projectUpdates.map(item => `
+                        <div class="flex gap-4 bg-zinc-900/30 p-2 rounded-xl cursor-pointer hover:bg-white/5 transition border border-transparent hover:border-white/10" onclick="showDetail('${item.slug}')">
+                            <img src="${item.image}" class="w-16 h-20 rounded-lg object-cover shadow-lg">
+                            <div class="flex-1 flex flex-col justify-center overflow-hidden">
+                                <h3 class="font-bold text-xs truncate mb-1">${item.title}</h3>
+                                <div class="flex items-center gap-2">
+                                    <span class="text-amber-500 text-[10px] font-bold bg-amber-500/10 px-2 py-0.5 rounded">${item.chapters[0]?.title}</span>
+                                </div>
                             </div>
                         </div>
-                    </div>
+                    `).join('')}
                 </div>
-            </div>`;
-        },
+            </div>
+        </div>
+    `;
+    window.scrollTo(0,0);
+}
 
-        reader: async (idOrSlug) => {
-            app.ui.root.innerHTML = `<div class="h-screen flex items-center justify-center flex-col gap-4"><div class="animate-spin h-10 w-10 border-4 border-amber-500 rounded-full border-t-transparent"></div><p>Memuat Gambar...</p></div>`;
-            document.getElementById('navbar').classList.add('-translate-y-full');
-            
-            let fetchSlug = idOrSlug;
-            if(idOrSlug.length === 36) {
-                const map = await app.utils.getSlug(idOrSlug);
-                if(map) fetchSlug = map;
-            }
+// --- List & Grid Logic ---
 
-            const data = await app.utils.fetch(`${CONFIG.API_BASE}/chapter/${fetchSlug}`);
-            if(!data || !data.data) {
-                document.getElementById('navbar').classList.remove('-translate-y-full');
-                return app.ui.showError("Gagal memuat gambar", "window.history.back()");
-            }
+async function showOngoing(page = 1) {
+    updateURL('/ongoing'); resetNavs();
+    setLoading();
+    const data = await fetchAPI(`${API_BASE}/list?status=Ongoing&orderby=popular&page=${page}`);
+    renderGrid(data, "Komik Ongoing Terpopuler", "showOngoing");
+}
 
-            const ch = data.data;
-            app.ui.root.innerHTML = `
-            <div class="bg-black min-h-screen relative -mt-20 reader-container">
-                <div class="fixed top-0 w-full p-3 z-50 glass flex justify-between items-center transition-transform" id="reader-top">
-                    <button onclick="window.history.back()" class="w-10 h-10 bg-black/50 rounded-full text-white flex items-center justify-center"><i class="fa fa-arrow-left"></i></button>
-                    <span class="text-xs font-bold truncate max-w-[150px] text-center text-amber-500">${ch.title}</span>
-                    <button onclick="document.documentElement.requestFullscreen().catch(e=>{})" class="w-10 h-10 bg-black/50 rounded-full text-white flex items-center justify-center"><i class="fa fa-expand"></i></button>
-                </div>
+async function showCompleted(page = 1) {
+    updateURL('/completed'); resetNavs();
+    setLoading();
+    const data = await fetchAPI(`${API_BASE}/list?status=Completed&orderby=popular&page=${page}`);
+    renderGrid(data, "Komik Tamat (Selesai)", "showCompleted");
+}
 
-                <div class="pb-20 pt-0 mx-auto max-w-3xl" onclick="document.getElementById('reader-top').classList.toggle('-translate-y-full');document.getElementById('reader-bot').classList.toggle('translate-y-full')">
-                    ${ch.images.map(img => `<img src="${img}" loading="lazy" class="w-full mb-1 min-h-[200px] bg-[#1a1a1a]" onerror="this.style.display='none'">`).join('')}
-                </div>
+async function showGenre(slug, page = 1) {
+    resetNavs();
+    setLoading();
+    const data = await fetchAPI(`${API_BASE}/genre/${slug}/${page}`);
+    if(!data || !data.data || data.data.length === 0) { redirectTo404(); return; }
+    renderGrid(data, `Genre: ${slug.toUpperCase()}`, "showGenre", slug);
+}
 
-                <div id="reader-bot" class="fixed bottom-0 w-full p-4 glass z-50 transition-transform duration-300">
-                    <div class="flex justify-center gap-4 max-w-md mx-auto">
-                        <button ${ch.navigation.prev ? `onclick="app.router.navigate(null, '${ch.navigation.prev}', true)"` : 'disabled'} class="flex-1 py-3 rounded-xl bg-white/10 disabled:opacity-30"><i class="fa fa-chevron-left"></i></button>
-                        <button ${ch.navigation.next ? `onclick="app.router.navigate(null, '${ch.navigation.next}', true)"` : 'disabled'} class="flex-1 py-3 rounded-xl bg-amber-500 text-black font-bold disabled:opacity-30"><i class="fa fa-chevron-right"></i></button>
-                    </div>
-                </div>
-            </div>`;
-        },
+async function applyAdvancedFilter() {
+    const query = document.getElementById('search-input').value;
+    const genre = document.getElementById('filter-genre').value;
+    const type = document.getElementById('filter-type').value;
+    const status = document.getElementById('filter-status').value;
+    
+    filterPanel.classList.add('hidden');
+    setLoading();
 
-        library: () => {
-            const bookmarks = app.state.bookmarks;
-            app.ui.root.innerHTML = `
-            <div class="fade-in">
-                <h2 class="text-2xl font-bold mb-6 flex items-center gap-2"><i class="fa fa-bookmark text-amber-500"></i> Perpustakaan</h2>
-                ${bookmarks.length === 0 ? '<div class="text-center text-gray-500 mt-20">Belum ada komik tersimpan.</div>' : ''}
-                <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
-                    ${bookmarks.map(item => app.components.comicCard(item)).join('')}
-                </div>
-            </div>`;
-        },
-
-        history: () => {
-            app.ui.root.innerHTML = `<div class="fade-in text-center mt-20 text-gray-500">Fitur Riwayat akan hadir di update berikutnya.</div>`;
-        },
-        
-        ongoing: async () => {
-            app.ui.root.innerHTML = app.ui.renderSkeleton('grid');
-            const data = await app.utils.fetch(`${CONFIG.API_BASE}/list?status=Ongoing&orderby=popular&page=1`);
-            app.ui.root.innerHTML = `
-            <div class="fade-in">
-                <h2 class="text-xl font-bold mb-6 border-l-4 border-green-500 pl-4">Komik Ongoing</h2>
-                <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
-                    ${(data?.data || []).map(item => app.components.comicCard(item)).join('')}
-                </div>
-            </div>`;
-        }
-    },
-
-    handlers: {
-        toggleBookmark: (slug, title, image) => {
-            const idx = app.state.bookmarks.findIndex(b => b.slug === slug);
-            if(idx > -1) {
-                app.state.bookmarks.splice(idx, 1);
-                app.ui.toast("Dihapus dari Library");
-            } else {
-                app.state.bookmarks.push({slug, title, image, added: Date.now()});
-                app.ui.toast("Disimpan ke Library");
-            }
-            localStorage.setItem('fmc_bookmarks', JSON.stringify(app.state.bookmarks));
-            const btn = document.querySelector('.fa-bookmark, .fa-bookmark-o');
-            if(btn) btn.className = idx > -1 ? 'fa fa-bookmark-o' : 'fa fa-bookmark text-amber-500';
-        }
-    },
-
-    router: {
-        // NAVIGASI DENGAN UUID OTOMATIS
-        navigate: async (path, slugHint = null, isChapter = false) => {
-            let finalPath = path;
-
-            // Jika ada Slug Hint (misal dari klik kartu komik)
-            // Kita cari UUID-nya dulu sebelum ganti URL
-            if(slugHint) {
-                app.ui.loading(true); // Tampilkan loading bar karena ini proses async
-                const type = isChapter ? 'chapter' : 'series';
-                const uuid = await app.utils.getUuid(slugHint, type);
-                finalPath = isChapter ? `/chapter/${uuid}` : `/series/${uuid}`;
-            }
-
-            if(finalPath) {
-                window.history.pushState({}, '', finalPath);
-                app.router.resolve(finalPath);
-            }
-        },
-        resolve: (path) => {
-            const nav = document.getElementById('navbar');
-            if(nav) nav.classList.remove('-translate-y-full');
-            
-            if(path === '/' || path === '/index.html') return app.pages.home();
-            if(path === '/ongoing') return app.pages.ongoing();
-            if(path === '/library') return app.pages.library(); // Added Library route
-            if(path === '/history') return app.pages.history(); // Added History route
-            
-            if(path.includes('/series/')) return app.pages.detail(path.split('/series/')[1]);
-            if(path.includes('/chapter/')) return app.pages.reader(path.split('/chapter/')[1]);
-            
-            return app.pages.home();
-        }
+    if (query) {
+        const data = await fetchAPI(`${API_BASE}/search/${encodeURIComponent(query)}/1`);
+        renderGrid(data, `Hasil Pencarian: "${query}"`, null); return;
     }
-};
+    if (genre) { showGenre(genre, 1); return; }
+    
+    let url = `${API_BASE}/list?page=1`;
+    if (type) url += `&type=${type}`;
+    if (status) url += `&status=${status}`;
+    const data = await fetchAPI(url + `&orderby=popular`);
+    renderGrid(data, "Hasil Filter", null);
+}
 
-window.addEventListener('popstate', () => app.router.resolve(window.location.pathname));
-document.addEventListener('DOMContentLoaded', () => app.router.resolve(window.location.pathname));
+function renderGrid(data, title, funcName, extraArg = null) {
+    const list = data?.data || [];
+    if(list.length === 0) {
+        contentArea.innerHTML = `<div class="text-center py-40 text-gray-500 flex flex-col items-center gap-4"><i class="fa fa-folder-open text-4xl opacity-50"></i><p>Tidak ada komik ditemukan.</p></div>`; return;
+    }
+    
+    let paginationHTML = '';
+    if (data.pagination && funcName) {
+        const current = data.pagination.currentPage;
+        const argStr = extraArg ? `'${extraArg}', ` : '';
+        paginationHTML = `
+            <div class="mt-14 flex justify-center items-center gap-4">
+                ${current > 1 ? `<button onclick="${funcName}(${argStr}${current - 1})" class="glass px-5 py-2 rounded-lg text-xs font-bold hover:bg-amber-500 hover:text-black transition"><i class="fa fa-chevron-left"></i> Prev</button>` : ''}
+                <span class="bg-amber-500 text-black px-4 py-2 rounded-lg text-xs font-extrabold shadow-lg shadow-amber-500/20">${current}</span>
+                ${data.pagination.hasNextPage ? `<button onclick="${funcName}(${argStr}${current + 1})" class="glass px-5 py-2 rounded-lg text-xs font-bold hover:bg-amber-500 hover:text-black transition">Next <i class="fa fa-chevron-right"></i></button>` : ''}
+            </div>
+        `;
+    }
+
+    contentArea.innerHTML = `
+        <h2 class="text-2xl font-bold mb-8 border-l-4 border-amber-500 pl-4">${title}</h2>
+        <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6">
+            ${list.map(item => `
+                <div class="bg-zinc-900/40 rounded-xl overflow-hidden border border-white/5 card-hover cursor-pointer relative group" onclick="showDetail('${item.slug}')">
+                    <span class="type-badge ${getTypeClass(item.type)}">${item.type || 'Comic'}</span>
+                    <div class="relative overflow-hidden aspect-[3/4]">
+                        <img src="${item.image}" class="w-full h-full object-cover group-hover:scale-110 transition duration-500">
+                        <div class="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent opacity-0 group-hover:opacity-100 transition duration-300"></div>
+                    </div>
+                    <div class="p-3 text-center">
+                        <h3 class="text-xs font-bold truncate group-hover:text-amber-500 transition">${item.title}</h3>
+                        <p class="text-[10px] text-amber-500 mt-1 font-medium">${item.latestChapter || item.chapter || 'Baca Sekarang'}</p>
+                    </div>
+                </div>
+            `).join('')}
+        </div>
+        ${paginationHTML}
+    `;
+    window.scrollTo(0,0);
+}
+
+// --- Detail Page Logic (REMASTERED) ---
+
+async function showDetail(idOrSlug, push = true) {
+    let slug = idOrSlug;
+    setLoading();
+
+    if (idOrSlug.length === 36) {
+        const mapping = await getSlugFromUuid(idOrSlug);
+        if (mapping) slug = mapping.slug;
+    }
+
+    if (push) {
+        const uuid = await getUuidFromSlug(slug, 'series');
+        updateURL(`/series/${uuid}`);
+    }
+
+    resetNavs(); 
+    const data = await fetchAPI(`${API_BASE}/detail/${slug}`);
+    if(!data || !data.data) { redirectTo404(); return; }
+
+    const res = data.data;
+    currentChapterList = res.chapters;
+
+    // Logic Tombol Baca
+    const history = JSON.parse(localStorage.getItem('fmc_history') || '[]');
+    const savedItem = history.find(h => h.slug === slug);
+    const lastCh = savedItem ? savedItem.lastChapterSlug : null;
+    const firstCh = res.chapters.length > 0 ? res.chapters[res.chapters.length - 1].slug : null;
+    
+    const startBtnText = lastCh ? "Lanjut Baca" : "Mulai Baca";
+    const startBtnAction = lastCh ? 
+        `readChapter('${lastCh}', '${slug}')` : 
+        (firstCh ? `readChapter('${firstCh}', '${slug}')` : "alert('Chapter belum tersedia')");
+
+    // Efek Backdrop Image
+    const backdropHTML = `
+        <div class="fixed top-0 left-0 w-full h-[60vh] -z-10 pointer-events-none overflow-hidden">
+            <img src="${res.image}" class="w-full h-full object-cover blur-2xl opacity-20 backdrop-banner animate-pulse-slow">
+            <div class="absolute inset-0 bg-gradient-to-b from-[#0b0b0f]/40 via-[#0b0b0f]/80 to-[#0b0b0f]"></div>
+        </div>
+    `;
+
+    contentArea.innerHTML = `
+        ${backdropHTML}
+        
+        <div class="relative z-10 flex flex-col md:flex-row gap-8 lg:gap-12 mt-4 animate-fade-in">
+            <!-- Left: Cover -->
+            <div class="md:w-[280px] flex-shrink-0 mx-auto md:mx-0 w-full max-w-[280px]">
+                <div class="relative group">
+                    <span class="type-badge ${getTypeClass(res.type)} scale-110 top-4 left-4 shadow-lg">${res.type || 'Comic'}</span>
+                    <img src="${res.image}" class="w-full rounded-2xl shadow-2xl border border-white/10 group-hover:border-amber-500/30 transition duration-500">
+                </div>
+                
+                <div class="flex flex-col gap-3 mt-6">
+                    <button onclick="${startBtnAction}" class="amber-gradient w-full py-3.5 rounded-xl font-bold text-black flex items-center justify-center gap-2 hover:scale-[1.02] active:scale-95 transition shadow-lg shadow-amber-500/20">
+                        <i class="fa fa-book-open"></i> ${startBtnText}
+                    </button>
+                    <button onclick="toggleBookmark('${slug}', '${res.title.replace(/'/g, "")}', '${res.image}')" id="btn-bookmark"
+                        class="w-full py-3.5 rounded-xl glass font-semibold border-white/10 hover:bg-white/10 transition flex items-center justify-center gap-2">
+                        <i class="fa fa-bookmark"></i> Simpan
+                    </button>
+                </div>
+            </div>
+
+            <!-- Right: Info -->
+            <div class="flex-1 min-w-0">
+                <h1 class="text-3xl md:text-5xl font-extrabold mb-4 leading-tight bg-clip-text text-transparent bg-gradient-to-r from-white to-gray-400">${res.title}</h1>
+                
+                <div class="flex flex-wrap gap-3 mb-6">
+                    <div class="glass px-4 py-1.5 rounded-lg flex items-center gap-2 text-xs font-bold text-amber-400 border border-amber-500/20">
+                        <i class="fa fa-star"></i> ${res.rating}
+                    </div>
+                    <div class="glass px-4 py-1.5 rounded-lg flex items-center gap-2 text-xs font-bold text-green-400 border border-green-500/20">
+                        <i class="fa fa-circle text-[6px]"></i> ${res.status}
+                    </div>
+                    <div class="glass px-4 py-1.5 rounded-lg flex items-center gap-2 text-xs font-bold text-blue-400 border border-blue-500/20">
+                        ${res.type}
+                    </div>
+                </div>
+
+                <div class="flex flex-wrap gap-2 mb-6">
+                    ${res.genres ? res.genres.map(g => `<span onclick="showGenre('${g.slug}')" class="cursor-pointer hover:text-amber-500 transition text-gray-400 text-xs px-3 py-1 rounded-full border border-white/10 hover:border-amber-500/50 bg-white/5">${g.title}</span>`).join('') : ''}
+                </div>
+
+                <div class="bg-white/5 rounded-2xl p-5 md:p-6 mb-8 border border-white/5 backdrop-blur-sm">
+                    <h3 class="font-bold text-sm mb-2 text-amber-500 uppercase tracking-wide">Sinopsis</h3>
+                    <p class="text-gray-300 text-sm leading-relaxed text-justify line-clamp-6 hover:line-clamp-none transition-all cursor-pointer">
+                        ${res.synopsis || "Sinopsis tidak tersedia."}
+                    </p>
+                </div>
+
+                <!-- Chapter List Section -->
+                <div class="glass rounded-2xl border border-white/10 overflow-hidden">
+                    <div class="p-4 border-b border-white/5 flex flex-col sm:flex-row justify-between items-center gap-4 bg-white/5">
+                        <h3 class="font-bold text-lg flex items-center gap-2">
+                            <i class="fa fa-list-ul text-amber-500"></i> Daftar Chapter
+                            <span class="bg-amber-500 text-black text-[10px] font-bold px-2 py-0.5 rounded-full">${res.chapters.length}</span>
+                        </h3>
+                        <div class="relative w-full sm:w-auto group">
+                            <i class="fa fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-xs group-focus-within:text-amber-500 transition"></i>
+                            <input type="text" id="chapter-search" onkeyup="filterChapters()" placeholder="Cari Chapter..." 
+                                class="w-full sm:w-64 bg-black/30 border border-white/10 rounded-lg py-2 pl-9 pr-4 text-xs focus:outline-none focus:border-amber-500 transition text-white">
+                        </div>
+                    </div>
+                    
+                    <div id="chapter-list-container" class="max-h-[500px] overflow-y-auto chapter-list-scroll p-2 bg-black/20">
+                        <!-- Content via JS -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+
+    renderChapterList(res.chapters, slug);
+    checkBookmarkStatus(slug);
+    saveHistory(slug, res.title, res.image);
+    window.scrollTo(0,0);
+}
+
+function renderChapterList(chapters, comicSlug) {
+    const container = document.getElementById('chapter-list-container');
+    const history = JSON.parse(localStorage.getItem('fmc_history') || '[]');
+    const comicHistory = history.find(h => h.slug === comicSlug);
+    const lastReadSlug = comicHistory ? comicHistory.lastChapterSlug : '';
+
+    if (!chapters || chapters.length === 0) {
+        container.innerHTML = '<div class="p-8 text-center text-gray-500 text-sm">Tidak ada chapter.</div>';
+        return;
+    }
+
+    container.innerHTML = chapters.map(ch => {
+        const isLastRead = ch.slug === lastReadSlug;
+        return `
+            <div onclick="readChapter('${ch.slug}', '${comicSlug}')" 
+                class="chapter-item group flex items-center justify-between p-3 mb-1 rounded-xl cursor-pointer border border-transparent transition-all duration-200
+                ${isLastRead ? 'bg-amber-500/10 border-amber-500/30' : 'bg-white/5 hover:bg-white/10 hover:border-amber-500/30'}">
+                
+                <div class="flex items-center gap-3 overflow-hidden">
+                    <div class="w-8 h-8 rounded-lg flex items-center justify-center bg-white/5 text-gray-400 group-hover:text-amber-500 group-hover:bg-amber-500/10 transition shrink-0">
+                        <i class="fa ${isLastRead ? 'fa-history' : 'fa-hashtag'} text-xs"></i>
+                    </div>
+                    <span class="text-sm font-medium truncate group-hover:text-amber-500 transition ${isLastRead ? 'text-amber-500' : 'text-gray-300'}">
+                        ${ch.title}
+                    </span>
+                </div>
+                
+                <div class="text-[10px] text-gray-500 bg-black/20 px-2 py-1 rounded group-hover:bg-amber-500 group-hover:text-black transition font-bold shrink-0">
+                    Baca
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function filterChapters() {
+    const input = document.getElementById('chapter-search');
+    const filter = input.value.toLowerCase();
+    const container = document.getElementById('chapter-list-container');
+    const items = container.getElementsByClassName('chapter-item');
+
+    for (let i = 0; i < items.length; i++) {
+        const span = items[i].getElementsByTagName("span")[0];
+        const txtValue = span.textContent || span.innerText;
+        items[i].style.display = txtValue.toLowerCase().indexOf(filter) > -1 ? "" : "none";
+    }
+}
+
+// --- Reader Logic (REMASTERED FOR PERFORMANCE) ---
+
+async function readChapter(chIdOrSlug, comicSlug = null, push = true) {
+    let chSlug = chIdOrSlug;
+    
+    // UI Loading State (Full Screen)
+    contentArea.innerHTML = `
+        <div class="flex flex-col items-center justify-center min-h-[80vh] gap-4">
+            <div class="relative">
+                <div class="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-amber-500"></div>
+                <div class="absolute inset-0 flex items-center justify-center font-bold text-[10px] text-amber-500">Fmc</div>
+            </div>
+            <p class="text-xs text-gray-500 animate-pulse font-mono">Memuat gambar...</p>
+        </div>
+    `;
+
+    if (chIdOrSlug.length === 36) {
+        const mapping = await getSlugFromUuid(chIdOrSlug);
+        if (mapping) chSlug = mapping.slug;
+    }
+
+    if (push) {
+        const uuid = await getUuidFromSlug(chSlug, 'chapter');
+        updateURL(`/chapter/${uuid}`);
+    }
+
+    // Hide Navigation
+    mainNav.classList.add('-translate-y-full');
+    mobileNav.classList.add('translate-y-full');
+    
+    const data = await fetchAPI(`${API_BASE}/chapter/${chSlug}`);
+    if(!data || !data.data) { redirectTo404(); return; }
+
+    const res = data.data;
+    const backAction = comicSlug ? `showDetail('${comicSlug}')` : `showHome()`;
+
+    // Dropdown Navigation
+    let dropdownHTML = '';
+    if (currentChapterList && currentChapterList.length > 0) {
+        dropdownHTML = `
+            <div class="relative group mx-2">
+                <select onchange="readChapter(this.value, '${comicSlug}')" class="appearance-none bg-black/50 backdrop-blur text-white border border-white/10 rounded-xl text-xs py-2.5 pl-3 pr-8 focus:outline-none focus:border-amber-500 cursor-pointer hover:bg-white/10 transition w-32 md:w-auto truncate">
+                    ${currentChapterList.map(ch => `<option value="${ch.slug}" ${ch.slug === chSlug ? 'selected' : ''}>${ch.title}</option>`).join('')}
+                </select>
+                <i class="fa fa-chevron-up absolute right-3 top-1/2 -translate-y-1/2 text-[10px] pointer-events-none text-gray-400"></i>
+            </div>
+        `;
+    }
+
+    // Main Reader Structure
+    contentArea.innerHTML = `
+        <div class="relative min-h-screen bg-[#0b0b0f] -mx-4 -mt-24">
+            
+            <!-- Top Bar (Floating) -->
+            <div id="reader-top" class="reader-ui fixed top-0 w-full bg-gradient-to-b from-black/90 to-transparent z-[60] p-4 flex justify-between items-center transition-all duration-300">
+                <div class="flex items-center gap-3">
+                    <button onclick="${backAction}" class="w-10 h-10 flex items-center justify-center bg-black/40 backdrop-blur-md border border-white/10 rounded-full hover:bg-amber-500 hover:text-black hover:border-amber-500 transition text-white">
+                        <i class="fa fa-arrow-left"></i>
+                    </button>
+                    <div class="flex flex-col drop-shadow-md">
+                        <span class="text-[9px] text-amber-500 uppercase tracking-widest font-bold">Reading</span>
+                        <h2 class="text-xs font-bold text-white max-w-[200px] truncate">${res.title || chSlug}</h2>
+                    </div>
+                </div>
+                <button onclick="toggleFullScreen()" class="w-10 h-10 flex items-center justify-center bg-black/40 backdrop-blur-md border border-white/10 rounded-full hover:bg-white/20 transition text-white">
+                    <i class="fa fa-expand text-xs"></i>
+                </button>
+            </div>
+
+            <!-- Image Container -->
+            <div id="reader-images" class="flex flex-col items-center pt-0 pb-0 min-h-screen w-full max-w-3xl mx-auto bg-[#111]" onclick="toggleReaderUI()">
+                <!-- Images Injected Here -->
+            </div>
+
+            <!-- Bottom Bar (Floating) -->
+            <div id="reader-bottom" class="reader-ui fixed bottom-6 left-0 w-full z-[60] px-4 flex justify-center pointer-events-none transition-all duration-300">
+                <div class="glass p-2 rounded-2xl flex gap-1 items-center shadow-2xl border border-white/10 pointer-events-auto bg-black/80 backdrop-blur-xl">
+                    <button onclick="${res.navigation.prev ? `readChapter('${res.navigation.prev}', '${comicSlug || ''}')` : ''}" 
+                        class="w-10 h-10 flex items-center justify-center rounded-xl ${!res.navigation.prev ? 'opacity-30 cursor-not-allowed text-gray-500' : 'hover:bg-amber-500 hover:text-black transition text-white'}">
+                        <i class="fa fa-chevron-left"></i>
+                    </button>
+                    
+                    ${dropdownHTML}
+
+                    <button onclick="${res.navigation.next ? `readChapter('${res.navigation.next}', '${comicSlug || ''}')` : ''}" 
+                        class="w-10 h-10 flex items-center justify-center rounded-xl ${!res.navigation.next ? 'opacity-30 cursor-not-allowed text-gray-500' : 'amber-gradient text-black hover:scale-105 transition shadow-lg shadow-amber-500/20'}">
+                        <i class="fa fa-chevron-right"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    // High Performance Image Loader (Skeleton -> Image)
+    const imageContainer = document.getElementById('reader-images');
+    
+    res.images.forEach((imgUrl) => {
+        // Wrapper untuk menahan layout
+        const wrapper = document.createElement('div');
+        wrapper.className = "w-full relative min-h-[400px] bg-[#1a1a1a]"; 
+
+        // Skeleton Element
+        const skeleton = document.createElement('div');
+        skeleton.className = "skeleton absolute inset-0 w-full h-full z-10";
+
+        // Image Element
+        const img = new Image();
+        img.src = imgUrl; 
+        img.className = "comic-page opacity-0 transition-opacity duration-500 relative z-20"; 
+        img.alt = "Page";
+        img.loading = "lazy"; // Native lazy load
+
+        img.onload = () => {
+            skeleton.remove();
+            img.classList.remove('opacity-0');
+            wrapper.style.minHeight = "auto"; 
+            wrapper.style.backgroundColor = "transparent";
+        };
+
+        img.onerror = () => {
+            skeleton.remove();
+            wrapper.innerHTML = `
+                <div class="flex flex-col items-center justify-center py-12 bg-zinc-900 text-gray-500 gap-3 border border-red-900/30">
+                    <i class="fa fa-triangle-exclamation text-red-500 text-2xl"></i>
+                    <span class="text-xs">Gagal memuat gambar</span>
+                    <button onclick="this.parentElement.parentElement.querySelector('img').src='${imgUrl}'" class="text-[10px] bg-white/10 px-4 py-2 rounded hover:bg-white/20 mt-1">Coba Lagi</button>
+                </div>
+            `;
+            wrapper.appendChild(img); // Tetap append hidden img untuk referensi reload
+        };
+
+        wrapper.appendChild(skeleton);
+        wrapper.appendChild(img);
+        imageContainer.appendChild(wrapper);
+    });
+
+    if(comicSlug) saveHistory(comicSlug, null, null, chSlug, res.title || chSlug.replace(/-/g, ' '));
+    window.scrollTo(0,0);
+}
+
+function toggleReaderUI() {
+    document.getElementById('reader-top').classList.toggle('ui-hidden-top');
+    document.getElementById('reader-bottom').classList.toggle('ui-hidden-bottom');
+}
+
+// --- History & Bookmarks ---
+
+function handleSearch(e) { if(e.key === 'Enter') applyAdvancedFilter(); }
+
+function saveHistory(slug, title, image, chSlug, chTitle) {
+    let history = JSON.parse(localStorage.getItem('fmc_history') || '[]');
+    let existing = history.find(h => h.slug === slug);
+    const data = {
+        slug, 
+        title: title || existing?.title, 
+        image: image || existing?.image,
+        lastChapterSlug: chSlug || existing?.lastChapterSlug, 
+        lastChapterTitle: chTitle || existing?.lastChapterTitle,
+        timestamp: new Date().getTime()
+    };
+    history = history.filter(h => h.slug !== slug);
+    history.unshift(data);
+    if (history.length > 50) history.pop();
+    localStorage.setItem('fmc_history', JSON.stringify(history));
+}
+
+function showHistory() {
+    updateURL('/history'); resetNavs();
+    let history = JSON.parse(localStorage.getItem('fmc_history') || '[]');
+    renderGrid({ data: history }, "Riwayat Baca", null);
+}
+
+function toggleBookmark(slug, title, image) {
+    let bookmarks = JSON.parse(localStorage.getItem('fmc_bookmarks') || '[]');
+    const idx = bookmarks.findIndex(b => b.slug === slug);
+    if (idx > -1) bookmarks.splice(idx, 1);
+    else bookmarks.push({ slug, title, image });
+    localStorage.setItem('fmc_bookmarks', JSON.stringify(bookmarks));
+    checkBookmarkStatus(slug);
+}
+
+function checkBookmarkStatus(slug) {
+    let bookmarks = JSON.parse(localStorage.getItem('fmc_bookmarks') || '[]');
+    const btn = document.getElementById('btn-bookmark');
+    if (btn && bookmarks.some(b => b.slug === slug)) {
+        btn.innerHTML = `<i class="fa fa-check text-amber-500"></i> Tersimpan`;
+        btn.classList.add('border-amber-500/50', 'bg-amber-500/10');
+        btn.classList.remove('glass');
+    } else if (btn) {
+        btn.innerHTML = `<i class="fa fa-bookmark"></i> Simpan`;
+        btn.classList.remove('border-amber-500/50', 'bg-amber-500/10');
+        btn.classList.add('glass');
+    }
+}
+
+function showBookmarks() {
+    updateURL('/bookmarks'); resetNavs();
+    let bookmarks = JSON.parse(localStorage.getItem('fmc_bookmarks') || '[]');
+    renderGrid({ data: bookmarks }, "Koleksi Favorit", null);
+}
+
+// --- Init ---
+
+async function handleInitialLoad() {
+    const path = window.location.pathname;
+    resetNavs(); 
+
+    if (path === '/404.html') return;
+
+    if (path.startsWith('/series/')) {
+        const uuid = path.split('/')[2];
+        if (uuid) showDetail(uuid, false);
+        else showHome(false);
+    } 
+    else if (path.startsWith('/chapter/')) {
+        const uuid = path.split('/')[2];
+        if (uuid) readChapter(uuid, null, false); 
+        else showHome(false);
+    } 
+    else if (path === '/ongoing') showOngoing(1);
+    else if (path === '/completed') showCompleted(1);
+    else if (path === '/history') showHistory();
+    else if (path === '/bookmarks') showBookmarks();
+    else showHome(false);
+}
+
+window.addEventListener('popstate', () => handleInitialLoad());
+
+document.addEventListener('DOMContentLoaded', () => {
+    loadGenres();
+    handleInitialLoad();
+});
