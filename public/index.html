@@ -1,125 +1,98 @@
+<!-- index.html -->
 <!DOCTYPE html>
 <html lang="id">
 <head>
     <meta charset="UTF-8">
+    <base href="/">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <meta name="theme-color" content="#f59e0b">
-    <meta name="description" content="Baca Komik Manga Manhwa Manhua Bahasa Indonesia Gratis dengan Fitur Pro">
-    <title>FmcComic - Ultimate Reader</title>
+    <title>FmcComic - Ultimate Reader Pro</title>
     
-    <!-- PWA Config -->
-    <link rel="manifest" href="manifest.json">
-    <link rel="icon" href="assets/icon.png" type="image/png">
-    <link rel="apple-touch-icon" href="assets/icon.png">
-    
-    <!-- Libraries -->
+    <link rel="icon" href="assets/icon.png" type="image/jpeg">
+
+    <!-- Tailwind & Icons -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     
     <link rel="stylesheet" href="style.css">
 </head>
-<body class="bg-[#0b0b0f] text-gray-100 font-['Outfit'] overflow-x-hidden selection:bg-amber-500 selection:text-black">
+<body class="overflow-x-hidden bg-[#0b0b0f] text-gray-200">
 
-    <!-- Loading Bar (Garis oranye di atas saat pindah halaman) -->
-    <div id="loading-bar" class="fixed top-0 left-0 h-1 bg-amber-500 z-[100] transition-all duration-300 w-0 shadow-[0_0_15px_rgba(245,158,11,0.7)]"></div>
+    <!-- Progress Bar Reading -->
+    <div id="progress-bar" style="width: 0%"></div>
 
-    <!-- Desktop & Mobile Header -->
-    <nav class="fixed top-0 w-full z-50 glass border-b border-white/5 transition-transform duration-300" id="navbar">
-        <div class="container mx-auto px-4 h-16 flex items-center justify-between">
-            <!-- Logo -->
-            <div class="flex items-center gap-2 cursor-pointer group" onclick="app.router.navigate('/')">
-                <div class="relative">
-                    <img src="assets/icon.png" onerror="this.src='https://via.placeholder.com/40'" class="w-8 h-8 rounded-lg shadow-lg group-hover:scale-110 transition">
-                    <div class="absolute -bottom-1 -right-1 w-3 h-3 bg-green-500 rounded-full border-2 border-[#0b0b0f]"></div>
+    <!-- Navbar Desktop -->
+    <nav id="main-nav" class="fixed top-0 w-full z-50 glass border-b border-white/5 transition-transform duration-300">
+        <div class="container mx-auto px-4 py-3 flex items-center justify-between">
+            <div class="flex items-center gap-8">
+                <div class="flex items-center gap-3 cursor-pointer group" onclick="showHome()">
+                    <img src="assets/icon.png" onerror="this.src='https://via.placeholder.com/40'" class="w-9 h-9 rounded-xl object-cover border border-amber-500/50 shadow-lg shadow-amber-500/20 group-hover:scale-105 transition">
+                    <h1 class="text-2xl font-extrabold text-amber-500 tracking-tight">
+                        Fmc<span class="text-white">Comic</span>
+                    </h1>
                 </div>
-                <h1 class="text-xl font-bold tracking-tight">Fmc<span class="text-amber-500">Comic</span></h1>
-            </div>
 
-            <!-- Desktop Menu -->
-            <div class="hidden md:flex items-center gap-1 bg-white/5 p-1 rounded-full border border-white/5">
-                <button onclick="app.router.navigate('/')" class="px-4 py-1.5 rounded-full text-sm font-medium hover:bg-white/10 transition">Beranda</button>
-                <button onclick="app.router.navigate('/ongoing')" class="px-4 py-1.5 rounded-full text-sm font-medium hover:bg-white/10 transition">Ongoing</button>
-                <button onclick="app.router.navigate('/library')" class="px-4 py-1.5 rounded-full text-sm font-medium hover:bg-white/10 transition">Library</button>
+                <div class="hidden md:flex gap-6 text-sm font-medium">
+                    <button onclick="showHome()" class="hover:text-amber-500 transition">Beranda</button>
+                    <button onclick="showOngoing()" class="hover:text-amber-500 transition">Ongoing</button>
+                    <button onclick="showCompleted()" class="hover:text-amber-500 transition font-bold text-green-400">Selesai</button>
+                </div>
             </div>
-
-            <!-- Right Icons (Search & Settings) -->
             <div class="flex items-center gap-3">
-                <button onclick="app.ui.toggleSearch()" class="w-9 h-9 flex items-center justify-center rounded-full hover:bg-white/10 transition">
-                    <i class="fa fa-search"></i>
-                </button>
-                <button onclick="app.ui.toggleSettings()" class="w-9 h-9 flex items-center justify-center rounded-full hover:bg-white/10 transition">
-                    <i class="fa fa-cog"></i>
-                </button>
+                <button onclick="toggleFilter()" class="w-10 h-10 flex items-center justify-center hover:bg-white/10 rounded-full transition"><i class="fa fa-search"></i></button>
+                <button onclick="showBookmarks()" class="w-10 h-10 flex items-center justify-center hover:bg-white/10 rounded-full transition"><i class="fa fa-bookmark"></i></button>
             </div>
         </div>
     </nav>
 
-    <!-- Search Overlay (Popup Pencarian) -->
-    <div id="search-overlay" class="fixed inset-0 bg-black/90 z-[60] hidden opacity-0 transition-opacity duration-300 backdrop-blur-sm">
-        <div class="container mx-auto px-4 pt-24">
-            <div class="relative max-w-2xl mx-auto">
-                <input type="text" id="search-input" placeholder="Cari judul komik..." 
-                    class="w-full bg-[#1a1a1f] border-2 border-white/10 rounded-2xl py-4 pl-14 pr-4 text-lg focus:outline-none focus:border-amber-500 focus:shadow-[0_0_30px_rgba(245,158,11,0.2)] transition placeholder-gray-500 text-white"
-                    onkeyup="if(event.key === 'Enter') app.pages.search(this.value)">
+    <!-- Filter Panel -->
+    <div id="filter-panel" class="fixed top-16 left-0 w-full glass z-[45] hidden border-b border-amber-500/20 p-4 shadow-2xl">
+        <div class="container mx-auto">
+            <div class="flex flex-col gap-4 max-w-4xl mx-auto">
+                <div class="relative w-full">
+                    <i class="fa fa-search absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"></i>
+                    <input type="text" id="search-input" onkeyup="handleSearch(event)" placeholder="Cari judul komik..." 
+                        class="w-full bg-black/40 border border-white/10 rounded-xl py-3 pl-12 pr-4 focus:outline-none focus:border-amber-500 transition text-white placeholder-gray-500">
+                </div>
                 
-                <i class="fa fa-search absolute left-5 top-1/2 -translate-y-1/2 text-gray-500 text-xl"></i>
-                
-                <button onclick="app.ui.toggleSearch()" class="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white bg-white/10 w-8 h-8 rounded-full flex items-center justify-center">
-                    <i class="fa fa-times"></i>
-                </button>
+                <div class="flex flex-wrap gap-2 justify-between items-center">
+                    <div class="flex flex-wrap gap-2 flex-1">
+                        <select id="filter-genre" class="bg-zinc-900 border border-white/10 rounded-lg px-4 py-2 focus:outline-none focus:border-amber-500 text-xs text-gray-300">
+                            <option value="">Pilih Genre</option>
+                        </select>
+                        <select id="filter-type" class="bg-zinc-900 border border-white/10 rounded-lg px-4 py-2 focus:outline-none focus:border-amber-500 text-xs text-gray-300">
+                            <option value="">Semua Tipe</option>
+                            <option value="manga">Manga</option>
+                            <option value="manhwa">Manhwa</option>
+                            <option value="manhua">Manhua</option>
+                        </select>
+                        <select id="filter-status" class="bg-zinc-900 border border-white/10 rounded-lg px-4 py-2 focus:outline-none focus:border-amber-500 text-xs text-gray-300">
+                            <option value="">Semua Status</option>
+                            <option value="ongoing">Ongoing</option>
+                            <option value="completed">Completed</option>
+                        </select>
+                    </div>
+                    <button onclick="applyAdvancedFilter()" class="amber-gradient px-6 py-2 rounded-lg font-bold text-black text-xs hover:opacity-90 transition w-full md:w-auto mt-2 md:mt-0 shadow-lg shadow-amber-500/20">
+                        Cari Komik
+                    </button>
+                </div>
             </div>
-            <div class="text-center mt-4 text-gray-500 text-sm">Tekan Enter untuk mencari</div>
         </div>
     </div>
 
-    <!-- Main Content Area (Tempat Script Mengisi Konten) -->
-    <main id="app-root" class="min-h-screen pt-20 pb-24 md:pb-10 container mx-auto px-4 transition-opacity duration-300">
-        <!-- Default Loading State -->
-        <div class="flex justify-center mt-20">
-            <div class="animate-spin h-10 w-10 border-4 border-amber-500 rounded-full border-t-transparent"></div>
-        </div>
+    <!-- Main Content -->
+    <main class="container mx-auto mt-24 px-4 pb-32 min-h-screen">
+        <div id="content-area"></div>
     </main>
 
-    <!-- Mobile Bottom Navigation (Menu Bawah HP) -->
-    <div class="fixed bottom-0 left-0 w-full glass border-t border-white/5 z-40 md:hidden pb-safe">
-        <div class="flex justify-around items-center h-16">
-            <button onclick="app.router.navigate('/')" class="nav-btn flex flex-col items-center gap-1 text-gray-400 w-full hover:text-amber-500 transition active:scale-90">
-                <i class="fa fa-compass text-xl mb-0.5"></i>
-                <span class="text-[10px] font-medium">Explore</span>
-            </button>
-            
-            <button onclick="app.router.navigate('/ongoing')" class="nav-btn flex flex-col items-center gap-1 text-gray-400 w-full hover:text-amber-500 transition active:scale-90">
-                <i class="fa fa-fire text-xl mb-0.5 text-orange-500"></i>
-                <span class="text-[10px] font-medium">Hot</span>
-            </button>
-            
-            <button onclick="app.router.navigate('/library')" class="nav-btn flex flex-col items-center gap-1 text-gray-400 w-full hover:text-amber-500 transition active:scale-90">
-                <i class="fa fa-bookmark text-xl mb-0.5"></i>
-                <span class="text-[10px] font-medium">Library</span>
-            </button>
-            
-            <button onclick="app.router.navigate('/history')" class="nav-btn flex flex-col items-center gap-1 text-gray-400 w-full hover:text-amber-500 transition active:scale-90">
-                <i class="fa fa-history text-xl mb-0.5"></i>
-                <span class="text-[10px] font-medium">History</span>
-            </button>
-        </div>
+    <!-- Mobile Nav -->
+    <div id="mobile-nav" class="fixed bottom-0 w-full glass border-t border-white/5 flex justify-around p-3 md:hidden z-50 transition-transform duration-300 pb-safe">
+        <button onclick="showHome()" class="flex flex-col items-center gap-1 text-gray-400 active:text-amber-500 w-16"><i class="fa fa-home text-lg"></i><span class="text-[10px]">Home</span></button>
+        <button onclick="showOngoing()" class="flex flex-col items-center gap-1 text-gray-400 active:text-amber-500 w-16"><i class="fa fa-fire text-lg text-orange-500"></i><span class="text-[10px]">Hot</span></button>
+        <button onclick="showCompleted()" class="flex flex-col items-center gap-1 text-gray-400 active:text-amber-500 w-16"><i class="fa fa-check-circle text-lg text-green-500"></i><span class="text-[10px]">Tamat</span></button>
+        <button onclick="showHistory()" class="flex flex-col items-center gap-1 text-gray-400 active:text-amber-500 w-16"><i class="fa fa-history text-lg"></i><span class="text-[10px]">Riwayat</span></button>
     </div>
 
-    <!-- Toast Notification (Notifikasi Kecil di Bawah) -->
-    <div id="toast" class="fixed bottom-24 left-1/2 -translate-x-1/2 glass border border-amber-500/20 px-6 py-3 rounded-full shadow-2xl z-[100] transform translate-y-20 opacity-0 transition-all duration-300 font-bold text-sm flex items-center gap-3">
-        <i class="fa fa-check-circle text-amber-500 text-lg"></i> <span id="toast-msg" class="text-white">Notification</span>
-    </div>
-
-    <!-- Scripts -->
     <script src="script.js"></script>
-    <script>
-        // Register Service Worker untuk PWA Offline
-        if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('sw.js')
-                .then(() => console.log('Service Worker Registered'))
-                .catch(err => console.log('SW Fail:', err));
-        }
-    </script>
 </body>
 </html>
