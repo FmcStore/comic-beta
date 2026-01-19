@@ -1,8 +1,8 @@
-/* 
-  FmcComic - improved reader UX
+/*
+  FmcComic - improved reader UX (final)
   - Fix klik chapter harus beberapa kali (navigation lock + feedback)
   - Fix next/prev kadang ngadat (anti double click + lock)
-  - Tambah indikator chapter & judul komik di reader top bar
+  - Header reader 1 baris: "Judul Komik - Chapter 1"
   - Progress bar reading
 */
 
@@ -52,7 +52,7 @@ function updateURL(path) {
 
 function getTypeClass(type) {
   if (!type) return 'type-default';
-  const t = type.toLowerCase();
+  const t = String(type).toLowerCase();
   if (t.includes('manga')) return 'type-manga';
   if (t.includes('manhwa')) return 'type-manhwa';
   if (t.includes('manhua')) return 'type-manhua';
@@ -103,7 +103,6 @@ function setLoading() {
 
 function lockNav() {
   isNavigating = true;
-  // kecil: bikin progress bar jadi kecil dulu
   setProgress(0);
 }
 
@@ -342,10 +341,8 @@ async function showDetail(idOrSlug, push = true) {
   const res = data.data;
   currentChapterList = res.chapters || [];
 
-  // simpan context komik utk reader header
   currentComicContext = { slug, title: res.title, image: res.image };
 
-  // tombol baca
   const history = JSON.parse(localStorage.getItem('fmc_history') || '[]');
   const savedItem = history.find(h => h.slug === slug);
   const lastCh = savedItem ? savedItem.lastChapterSlug : null;
@@ -495,7 +492,6 @@ function renderChapterList(chapters, comicSlug) {
   }).join('');
 }
 
-/* wrapper supaya ga double click */
 function safeReadChapter(chSlug, comicSlug) {
   if (isNavigating) return;
   readChapter(chSlug, comicSlug, true);
@@ -514,17 +510,17 @@ function filterChapters() {
   }
 }
 
-/* ---------------- Reader Logic (improved) ---------------- */
+/* ---------------- Reader Logic (final header 1 baris) ---------------- */
 
 function normalizeChapterLabel(text) {
-  // bikin label lebih rapih: kalau sudah ada "Chapter" biarin, kalau tidak coba extract angka
   if (!text) return "Chapter";
   const t = String(text).trim();
+
   if (/chapter/i.test(t)) return t;
 
-  // ambil angka terakhir
   const m = t.match(/(\d+(\.\d+)?)/);
   if (m) return `Chapter ${m[1]}`;
+
   return t;
 }
 
@@ -532,25 +528,21 @@ async function readChapter(chIdOrSlug, comicSlug = null, push = true) {
   if (isNavigating) return;
   lockNav();
 
-  // feedback instan (biar ga terasa klik berkali-kali)
   setLoading();
 
   try {
     let chSlug = chIdOrSlug;
 
-    // kalau UUID, convert ke slug via backend
     if (chIdOrSlug.length === 36) {
       const mapping = await getSlugFromUuid(chIdOrSlug);
       if (mapping) chSlug = mapping.slug;
     }
 
-    // update URL dengan pola lama (tetap pakai backend mapping, sesuai request kamu)
     if (push) {
       const uuid = await getUuidFromSlug(chSlug, 'chapter');
       updateURL(`/chapter/${uuid}`);
     }
 
-    // hide nav
     mainNav.classList.add('-translate-y-full');
     mobileNav.classList.add('translate-y-full');
 
@@ -559,7 +551,6 @@ async function readChapter(chIdOrSlug, comicSlug = null, push = true) {
 
     const res = data.data;
 
-    // pastiin comic slug ada
     let finalComicSlug = comicSlug;
     if (!finalComicSlug) {
       if (res.parent_slug) finalComicSlug = res.parent_slug;
@@ -567,13 +558,17 @@ async function readChapter(chIdOrSlug, comicSlug = null, push = true) {
       else if (res.relation && res.relation.slug) finalComicSlug = res.relation.slug;
     }
 
-    // ambil context title komik (kalau belum ada)
-    const comicTitle = currentComicContext?.title || res.comic_title || res.parent_title || "Komik";
+    const comicTitle =
+      currentComicContext?.title ||
+      res.comic_title ||
+      res.parent_title ||
+      "Komik";
+
     const chapterLabel = normalizeChapterLabel(res.title || chSlug);
+    const headerTitle = `${comicTitle} - ${chapterLabel}`;
 
     const backAction = finalComicSlug ? `showDetail('${finalComicSlug}')` : `showHome()`;
 
-    // dropdown
     let dropdownHTML = '';
     if (currentChapterList && currentChapterList.length > 0) {
       dropdownHTML = generateDropdownHTML(currentChapterList, chSlug, finalComicSlug);
@@ -584,7 +579,6 @@ async function readChapter(chIdOrSlug, comicSlug = null, push = true) {
     contentArea.innerHTML = `
       <div class="relative min-h-screen bg-[#0b0b0f] -mx-4 -mt-24">
 
-        <!-- Top Bar -->
         <div id="reader-top" class="reader-ui fixed top-0 w-full bg-gradient-to-b from-black/90 to-transparent z-[60] p-4 flex justify-between items-center transition-all duration-300">
           <div class="flex items-center gap-3">
             <button onclick="${backAction}" class="w-10 h-10 flex items-center justify-center bg-black/40 backdrop-blur-md border border-white/10 rounded-full hover:bg-amber-500 hover:text-black hover:border-amber-500 transition text-white">
@@ -593,8 +587,7 @@ async function readChapter(chIdOrSlug, comicSlug = null, push = true) {
 
             <div class="flex flex-col drop-shadow-md min-w-0">
               <span class="text-[9px] text-amber-500 uppercase tracking-widest font-bold">Reading</span>
-              <h2 class="text-xs font-bold text-white max-w-[220px] truncate">${comicTitle}</h2>
-              <p class="text-[10px] text-gray-300 max-w-[220px] truncate">${chapterLabel}</p>
+              <h2 class="text-xs font-bold text-white max-w-[280px] truncate">${headerTitle}</h2>
             </div>
           </div>
 
@@ -603,11 +596,9 @@ async function readChapter(chIdOrSlug, comicSlug = null, push = true) {
           </button>
         </div>
 
-        <!-- Image Container -->
         <div id="reader-images" class="flex flex-col items-center pt-0 pb-0 min-h-screen w-full max-w-3xl mx-auto bg-[#111]" onclick="toggleReaderUI()">
         </div>
 
-        <!-- Bottom Bar -->
         <div id="reader-bottom" class="reader-ui fixed bottom-6 left-0 w-full z-[60] px-4 flex justify-center transition-all duration-300">
           <div class="glass p-2 rounded-2xl flex gap-1 items-center shadow-2xl border border-white/10 bg-black/80 backdrop-blur-xl">
             <button id="btn-prev"
@@ -630,11 +621,9 @@ async function readChapter(chIdOrSlug, comicSlug = null, push = true) {
       </div>
     `;
 
-    // render images + progress
     const imageContainer = document.getElementById('reader-images');
     const imgs = res.images || [];
 
-    // biar terasa cepat: progress naik sedikit saat mulai render
     setProgress(10);
 
     let loadedCount = 0;
@@ -658,8 +647,6 @@ async function readChapter(chIdOrSlug, comicSlug = null, push = true) {
         img.classList.remove('opacity-0');
         wrapper.style.minHeight = "auto";
         wrapper.style.backgroundColor = "transparent";
-
-        // progress berdasarkan jumlah gambar loaded
         setProgress(10 + (loadedCount / total) * 70);
       };
 
@@ -682,17 +669,15 @@ async function readChapter(chIdOrSlug, comicSlug = null, push = true) {
       imageContainer.appendChild(wrapper);
     });
 
-    // history
     if (finalComicSlug) {
+      // simpan history: judul chapter pakai "Chapter X" yang sudah bersih
       saveHistory(finalComicSlug, currentComicContext?.title, currentComicContext?.image, chSlug, chapterLabel);
     }
 
-    // restore dropdown kalau refresh langsung di chapter
     if ((!currentChapterList || currentChapterList.length === 0) && finalComicSlug) {
       fetchAndPopulateDropdown(finalComicSlug, chSlug);
     }
 
-    // final progress
     setProgress(100);
     window.scrollTo(0, 0);
     bindReaderProgress();
@@ -717,12 +702,7 @@ async function fetchAndPopulateDropdown(comicSlug, currentChapterSlug) {
   const data = await fetchAPI(`${API_BASE}/detail/${comicSlug}`);
   if (data && data.data) {
     currentChapterList = data.data.chapters || [];
-    // update context komik
-    currentComicContext = {
-      slug: comicSlug,
-      title: data.data.title,
-      image: data.data.image
-    };
+    currentComicContext = { slug: comicSlug, title: data.data.title, image: data.data.image };
 
     const container = document.getElementById('chapter-dropdown-container');
     if (container) {
